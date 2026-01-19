@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raspilnaya Online - Кабинет Мебельщика</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --success: #27ae60; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: #333; }
+        
+        /* Navigation */
+        header { background: var(--primary); color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        nav { background: white; display: flex; justify-content: center; gap: 20px; padding: 10px; border-bottom: 1px solid #ddd; }
+        nav a { padding: 10px 20px; cursor: pointer; font-weight: 600; color: #666; transition: 0.3s; border-radius: 5px; }
+        nav a:hover { background: #eee; }
+        nav a.active { color: var(--accent); background: #e8f4fd; }
+
+        .container { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
+        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: center; }
+        th { background: #f8f9fa; font-size: 0.9em; }
+        input[type="number"], input[type="text"] { width: 90%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        
+        /* Catalog */
+        .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .product-card { border: 1px solid #eee; padding: 15px; border-radius: 8px; text-align: center; }
+        .product-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; }
+
+        /* Simulation */
+        .canvas-wrapper { overflow: auto; background: #555; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; }
+        canvas { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="font-size: 1.5rem; font-weight: bold;">🪚 Raspilnaya_Bot Web</div>
+    <div id="auth-zone">
+        <button class="btn btn-primary" onclick="login()">Войти через Telegram</button>
+    </div>
+</header>
+
+<nav id="app-nav" class="hidden">
+    <a onclick="showPage('catalog')" id="nav-catalog">📦 Каталог</a>
+    <a onclick="showPage('editor')" id="nav-editor">📐 Расчет распила</a>
+    <a onclick="showPage('history')" id="nav-history">📁 Мои заказы</a>
+</nav>
+
+<div class="container">
+    
+    <section id="page-catalog" class="page hidden">
+        <div class="card">
+            <h2>Выберите материал</h2>
+            <div class="catalog-grid" id="catalog-list"></div>
+        </div>
+    </section>
+
+    <section id="page-editor" class="page hidden">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between;">
+                <h2 id="selected-material-title">Материал не выбран</h2>
+                <button class="btn btn-primary" onclick="addDetail()">+ Добавить деталь</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Длина (мм)</th>
+                        <th>Ширина (мм)</th>
+                        <th>Кол-во</th>
+                        <th>Кромка</th>
+                        <th>Удалить</th>
+                    </tr>
+                </thead>
+                <tbody id="details-body"></tbody>
+            </table>
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn btn-success" onclick="runOptimization()">🚀 Запустить симуляцию</button>
+                <button class="btn" style="background: #95a5a6; color:white" onclick="saveOrder()">Сохранить заказ</button>
+            </div>
+        </div>
+
+        <div id="simulation-result" class="card hidden">
+            <h3>Результат оптимизации</h3>
+            <div id="stats" style="margin-bottom: 10px; font-weight: bold; color: var(--success);"></div>
+            <div class="canvas-wrapper">
+                <canvas id="cutCanvas"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <section id="page-history" class="page hidden">
+        <div class="card">
+            <h2>Ваши сохраненные заказы</h2>
+            <div id="history-list">Пока здесь пусто...</div>
+        </div>
+    </section>
+
+</div>
+
+<script>
+    // --- ДАННЫЕ ---
+    const products = [
+        { name: 'ЛДСП Дуб Сонома', w: 2800, h: 2070, price: 450000, img: 'https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&w=200&q=80' },
+        { name: 'ЛДСП Белый Гладкий', w: 2800, h: 2070, price: 390000, img: 'https://images.unsplash.com/photo-1517705008128-361805f42e86?auto=format&fit=crop&w=200&q=80' },
+        { name: 'МДФ Шлифованный', w: 2440, h: 1830, price: 510000, img: 'https://images.unsplash.com/photo-1542621334-a254cf47733d?auto=format&fit=crop&w=200&q=80' }
+    ];
+
+    let currentOrder = {
+        material: null,
+        details: []
+    };
+
+    // --- ЛОГИКА ПЕРЕКЛЮЧЕНИЯ СТРАНИЦ ---
+    function showPage(pageId) {
+        document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+        document.getElementById('page-' + pageId).classList.remove('hidden');
+        document.getElementById('nav-' + pageId).classList.add('active');
+    }
+
+    // --- АВТОРИЗАЦИЯ ---
+    function login() {
+        const user = prompt("Введите ваше имя (для Raspilnaya_Bot):");
+        if(user) {
+            localStorage.setItem('m_user', user);
+            renderUI();
+        }
+    }
+
+    function renderUI() {
+        const user = localStorage.getItem('m_user');
+        if(user) {
+            document.getElementById('auth-zone').innerHTML = `Привет, <b>${user}</b> | <a href="#" onclick="localStorage.clear(); location.reload()" style="color:white">Выйти</a>`;
+            document.getElementById('app-nav').classList.remove('hidden');
+            renderCatalog();
+            showPage('catalog');
+        }
+    }
+
+    // --- КАТАЛОГ ---
+    function renderCatalog() {
+        const html = products.map((p, idx) => `
+            <div class="product-card">
+                <img src="${p.img}">
+                <h4>${p.name}</h4>
+                <p>${p.w}x${p.h} мм</p>
+                <p><b>${p.price.toLocaleString()} сум</b></p>
+                <button class="btn btn-primary" onclick="selectMaterial(${idx})">Выбрать</button>
+            </div>
+        `).join('');
+        document.getElementById('catalog-list').innerHTML = html;
+    }
+
+    function selectMaterial(idx) {
+        currentOrder.material = products[idx];
+        document.getElementById('selected-material-title').innerText = "Материал: " + products[idx].name;
+        showPage('editor');
+        if(currentOrder.details.length === 0) addDetail();
+    }
+
+    // --- ТАБЛИЦА ДЕТАЛЕЙ ---
+    function addDetail() {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" value="Деталь"></td>
+            <td><input type="number" class="d-l" value="500"></td>
+            <td><input type="number" class="d-w" value="300"></td>
+            <td><input type="number" class="d-q" value="1"></td>
+            <td><input type="checkbox"> <input type="checkbox"></td>
+            <td><button onclick="this.parentElement.parentElement.remove()">❌</button></td>
+        `;
+        document.getElementById('details-body').appendChild(tr);
+    }
+
+    // --- ОПТИМИЗАЦИЯ И ОТРИСОВКА ---
+    function runOptimization() {
+        const material = currentOrder.material;
+        const rows = document.querySelectorAll('#details-body tr');
+        let parts = [];
+
+        rows.forEach(row => {
+            const l = parseInt(row.querySelector('.d-l').value);
+            const w = parseInt(row.querySelector('.d-w').value);
+            const q = parseInt(row.querySelector('.d-q').value);
+            for(let i=0; i<q; i++) parts.push({l, w});
+        });
+
+        // Простейший Shelf Packing Алгоритм
+        parts.sort((a,b) => b.w - a.w); // Сортировка по ширине
+
+        const canvas = document.getElementById('cutCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 0.3; // Масштаб для отображения
+        
+        canvas.width = material.w * scale;
+        canvas.height = material.h * scale;
+        
+        ctx.fillStyle = "#ddd";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+
+        let curX = 0, curY = 0, rowH = 0, kerf = 4;
+        let count = 0;
+
+        ctx.fillStyle = varColor = "#3498db";
+        ctx.strokeStyle = "#fff";
+
+        parts.forEach(p => {
+            if(curX + (p.l * scale) > canvas.width) {
+                curX = 0;
+                curY += (rowH * scale) + (kerf * scale);
+                rowH = 0;
+            }
+            if(curY + (p.w * scale) <= canvas.height) {
+                ctx.fillRect(curX, curY, p.l * scale, p.w * scale);
+                ctx.strokeRect(curX, curY, p.l * scale, p.w * scale);
+                curX += (p.l * scale) + (kerf * scale);
+                rowH = Math.max(rowH, p.w);
+                count++;
+            }
+        });
+
+        document.getElementById('simulation-result').classList.remove('hidden');
+        document.getElementById('stats').innerText = `Размещено деталей: ${count} из ${parts.length}. Листов: 1.`;
+    }
+
+    window.onload = renderUI;
+</script>
+
+</body>
+</html>
